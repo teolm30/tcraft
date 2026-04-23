@@ -106,31 +106,32 @@
   /* Mobile controls */
   .mobile-only { display: none !important; }
   #joystick {
-    position: fixed; bottom: 90px; left: 30px;
-    width: 110px; height: 110px;
-    background: rgba(255,255,255,0.08);
-    border: 2px solid rgba(255,255,255,0.15);
+    position: fixed; bottom: 100px; left: 40px;
+    width: 130px; height: 130px;
+    background: rgba(255,255,255,0.1);
+    border: 3px solid rgba(255,255,255,0.25);
     border-radius: 50%; z-index: 20;
   }
   #joystick-knob {
     position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    width: 44px; height: 44px;
-    background: rgba(255,255,255,0.3);
-    border: 2px solid rgba(255,255,255,0.5);
+    width: 54px; height: 54px;
+    background: rgba(255,255,255,0.4);
+    border: 3px solid rgba(255,255,255,0.7);
     border-radius: 50%;
   }
   #look-zone {
     position: fixed; top: 0; right: 0; width: 60%; height: 100%; z-index: 15;
+    background: rgba(0,0,0,0.01);
   }
   .action-btn {
-    position: fixed; right: 30px; width: 56px; height: 56px;
+    position: fixed; right: 40px; width: 64px; height: 64px;
     border-radius: 50%; z-index: 20;
     display: flex; align-items: center; justify-content: center;
-    font-size: 20px;
+    font-size: 24px;
   }
-  #jump-btn { bottom: 90px; background: rgba(255,255,255,0.15); border: 2px solid rgba(255,255,255,0.3); }
-  #break-btn { bottom: 160px; background: rgba(200,60,60,0.4); border: 2px solid rgba(200,60,60,0.6); }
-  #place-btn { bottom: 230px; background: rgba(60,180,60,0.4); border: 2px solid rgba(60,180,60,0.6); }
+  #jump-btn { bottom: 100px; background: rgba(255,255,255,0.2); border: 3px solid rgba(255,255,255,0.4); }
+  #break-btn { bottom: 180px; background: rgba(200,60,60,0.5); border: 3px solid rgba(200,60,60,0.8); }
+  #place-btn { bottom: 260px; background: rgba(60,180,60,0.5); border: 3px solid rgba(60,180,60,0.8); }
   
   @media (max-width: 768px), (pointer: coarse) {
     .mobile-only { display: flex !important; }
@@ -503,9 +504,9 @@ if (isMobile) {
   });
   look.addEventListener('touchend', e => { e.preventDefault(); lookTouch = null; });
   
-  document.getElementById('jump-btn').ontouchstart = e => { e.preventDefault(); if (onGnd) velY = 7; };
-  document.getElementById('break-btn').ontouchstart = e => { e.preventDefault(); doBreak(); };
-  document.getElementById('place-btn').ontouchstart = e => { e.preventDefault(); doPlace(); };
+  document.getElementById('jump-btn').addEventListener('touchstart', e => { e.preventDefault(); if (onGnd) velY = 7; }, {passive: false});
+  document.getElementById('break-btn').addEventListener('touchstart', e => { e.preventDefault(); doBreak(); }, {passive: false});
+  document.getElementById('place-btn').addEventListener('touchstart', e => { e.preventDefault(); doPlace(); }, {passive: false});
 }
 
 // === RAYCAST ===
@@ -549,10 +550,13 @@ function physics(dt) {
   const fwd = [-Math.sin(yaw), 0, -Math.cos(yaw)];
   const rgt = [Math.cos(yaw), 0, -Math.sin(yaw)];
   
-  if (isMobile && (joyX || joyZ)) {
-    mx = fwd[0]*-joyZ + rgt[0]*joyX;
-    mz = fwd[2]*-joyZ + rgt[2]*joyX;
-  } else {
+  // Always use joystick if mobile
+  if (isMobile) {
+    mx = fwd[0]*(-joyZ) + rgt[0]*joyX;
+    mz = fwd[2]*(-joyZ) + rgt[2]*joyX;
+  }
+  
+  if (!isMobile) {
     if (keys['KeyW']) { mx += fwd[0]; mz += fwd[2]; }
     if (keys['KeyS']) { mx -= fwd[0]; mz -= fwd[2]; }
     if (keys['KeyA']) { mx += rgt[0]; mz += rgt[2]; }
@@ -562,26 +566,38 @@ function physics(dt) {
   if (len > 0) { mx /= len; mz /= len; }
   
   velY -= 20 * dt;
+  
   const nx = camera.position.x + mx*spd*dt;
   const ny = camera.position.y + velY*dt;
   const nz = camera.position.z + mz*spd*dt;
   
   if (!solid(nx, camera.position.y, camera.position.z)) camera.position.x = nx;
+  
   if (!solid(camera.position.x, camera.position.y, nz)) camera.position.z = nz;
+  
   if (!solid(camera.position.x, ny, camera.position.z)) {
-    camera.position.y = ny; onGnd = false;
+    camera.position.y = ny; 
+    onGnd = false;
   } else {
     if (velY < 0) onGnd = true;
     velY = 0;
   }
   
-  if ((keys['Space'] || (isMobile)) && onGnd) { velY = 7; onGnd = false; }
+  // Clamp Y to prevent falling through world
+  if (camera.position.y < 1) { camera.position.y = 1; velY = 0; onGnd = true; }
+  
+  if (keys['Space'] && onGnd) { velY = 7; onGnd = false; }
 }
 
 function solid(x, y, z) {
-  for (let dy = 0; dy <= 1.6; dy += 0.8) {
-    if (blockAt(Math.floor(x+0.3), Math.floor(y+dy), Math.floor(z+0.3)) !== 0) return true;
-    if (blockAt(Math.floor(x-0.3), Math.floor(y+dy), Math.floor(z-0.3)) !== 0) return true;
+  const bx = Math.floor(x), by = Math.floor(y), bz = Math.floor(z);
+  // Check multiple points around the player
+  for (let dx = -0.2; dx <= 0.2; dx += 0.2) {
+    for (let dz = -0.2; dz <= 0.2; dz += 0.2) {
+      for (let dy = 0; dy <= 1.5; dy += 0.5) {
+        if (blockAt(bx+dx, by+dy, bz+dz) !== 0) return true;
+      }
+    }
   }
   return false;
 }
@@ -626,8 +642,9 @@ function gameLoop(now) {
 }
 
 // === INIT ===
-const spawnH = height(0, 0);
-camera.position.set(0, spawnH + 2, 0);
+const spawnH = height(0, 0) + 2;
+camera.position.set(0.5, spawnH, 0.5);
+onGnd = true; velY = 0;
 
 // Preload center chunks
 setProgress(10, 'Generating terrain...');
